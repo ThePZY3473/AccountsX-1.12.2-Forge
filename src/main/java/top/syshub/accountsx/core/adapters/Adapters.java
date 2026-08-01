@@ -5,21 +5,26 @@ import top.syshub.accountsx.core.AccountsX;
 import top.syshub.accountsx.core.adapters.api.AccountSession;
 import top.syshub.accountsx.core.adapters.api.AuthlibAdapter;
 import top.syshub.accountsx.core.adapters.api.MinecraftAdapter;
-import net.fabricmc.loader.api.FabricLoader;
-import net.fabricmc.loader.api.metadata.CustomValue;
+import top.syshub.accountsx.forge.authlib.AuthlibAdapterImpl;
+import top.syshub.accountsx.forge.mc.MinecraftAdapterImpl;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Arrays;
-import java.util.function.Supplier;
+import com.google.common.base.Supplier;
 
 public final class Adapters {
     private Adapters() {
     }
 
-    private record AdapterImpl(AuthlibAdapter<AccountSession> authlibAdapter,
-                               MinecraftAdapter<AccountSession> minecraftAdapter) {
-        public AdapterImpl {
+    private static final class AdapterImpl {
+        private final AuthlibAdapter<AccountSession> authlibAdapter;
+        private final MinecraftAdapter<AccountSession> minecraftAdapter;
+
+        private AdapterImpl(AuthlibAdapter<AccountSession> authlibAdapter,
+                            MinecraftAdapter<AccountSession> minecraftAdapter) {
+            this.authlibAdapter = authlibAdapter;
+            this.minecraftAdapter = minecraftAdapter;
             if (!Arrays.equals(
                     getAccountSessionType(authlibAdapter, AuthlibAdapter.class),
                     getAccountSessionType(minecraftAdapter, MinecraftAdapter.class)
@@ -35,24 +40,32 @@ public final class Adapters {
                     throw new IllegalStateException(String.format("%s should directly implement %s and provide a generic argument.", o.getClass(), apiClass));
                 }
 
-                if (adapterType instanceof ParameterizedType pAdapterType && pAdapterType.getRawType() == apiClass) {
+                if (adapterType instanceof ParameterizedType && ((ParameterizedType) adapterType).getRawType() == apiClass) {
+                    ParameterizedType pAdapterType = (ParameterizedType) adapterType;
                     return pAdapterType.getActualTypeArguments();
                 }
             }
 
             throw new IllegalStateException(String.format("%s should directly implement %s.", o.getClass(), apiClass));
         }
+
+        private AuthlibAdapter<AccountSession> authlibAdapter() {
+            return authlibAdapter;
+        }
+
+        private MinecraftAdapter<AccountSession> minecraftAdapter() {
+            return minecraftAdapter;
+        }
     }
 
     @SuppressWarnings({"unchecked"})
-    private static final Supplier<AdapterImpl> INSTANCE = Suppliers.memoize(() -> {
-        try {
+    private static final Supplier<AdapterImpl> INSTANCE = Suppliers.memoize(new Supplier<AdapterImpl>() {
+        @Override
+        public AdapterImpl get() {
             return new AdapterImpl(
-                    compute0(AccountsX.AUTHLIB_ADAPTER_ID, "accountsx:adapter.authlib", AuthlibAdapter.class),
-                    compute0(AccountsX.MC_ADAPTER_ID, "accountsx:adapter.mc", MinecraftAdapter.class)
+                    (AuthlibAdapter<AccountSession>) (AuthlibAdapter<?>) new AuthlibAdapterImpl(),
+                    (MinecraftAdapter<AccountSession>) (MinecraftAdapter<?>) new MinecraftAdapterImpl()
             );
-        } catch (Exception e) {
-            throw new IllegalStateException("Cannot compute the adapters.", e);
         }
     });
 
@@ -64,29 +77,4 @@ public final class Adapters {
         return INSTANCE.get().minecraftAdapter();
     }
 
-
-    private static <T> T compute0(String modID, String cvName, Class<T> type) {
-        try {
-            return type.cast(Class.forName(
-                    check(
-                            check(FabricLoader.getInstance().getModContainer(modID).orElseThrow(
-                                    () -> new IllegalStateException("Mod " + modID + " should be bundled in AccountsX!")
-                            ).getMetadata().getCustomValue(cvName), CustomValue.CvType.OBJECT, "$").getAsObject().get("class"),
-                            CustomValue.CvType.STRING, "$.class"
-                    ).getAsString()
-            ).getConstructor().newInstance());
-        } catch (Exception e) {
-            throw new IllegalStateException("Cannot compute " + type.getName() + " implementation.", e);
-        }
-    }
-
-    private static CustomValue check(CustomValue value, CustomValue.CvType type, String path) {
-        if (value == null) {
-            throw new IllegalStateException(path + "should not be null.");
-        }
-        if (value.getType() != type) {
-            throw new IllegalStateException(path + " should be " + type + " but is " + value.getType() + '.');
-        }
-        return value;
-    }
 }

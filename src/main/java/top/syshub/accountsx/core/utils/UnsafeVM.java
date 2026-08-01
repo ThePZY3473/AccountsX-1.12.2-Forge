@@ -3,19 +3,13 @@ package top.syshub.accountsx.core.utils;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import top.syshub.accountsx.core.AccountsX;
-import net.fabricmc.loader.api.FabricLoader;
-import net.fabricmc.loader.api.metadata.CustomValue;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
-import sun.misc.Unsafe;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
 
 public final class UnsafeVM {
     private UnsafeVM() {
@@ -24,97 +18,57 @@ public final class UnsafeVM {
     private static final MethodHandles.Lookup GENERAL_LOOKUP = MethodHandles.lookup();
 
     @SuppressWarnings("deprecation")
-    private static final Supplier<MethodHandles.Lookup> IMPL_LOOKUP = Suppliers.memoize(() -> {
-        CustomValue.CvArray impls = FabricLoader.getInstance().getModContainer(AccountsX.MOD_ID).orElseThrow(
-                () -> new IllegalStateException("I should be loaded.")
-        ).getMetadata().getCustomValue("accountsx:impl-lookup-accessor").getAsArray();
-
-        int l = impls.size();
-        Throwable[] ts = new Throwable[l];
-        for (int i = 0; i < l; i++) {
+    private static final Supplier<MethodHandles.Lookup> IMPL_LOOKUP = Suppliers.memoize(new Supplier<MethodHandles.Lookup>() {
+        @Override
+        public MethodHandles.Lookup get() {
             try {
-                return (MethodHandles.Lookup) MethodHandles.publicLookup().findStatic(
-                        Class.forName(impls.get(i).getAsString()),
-                        "get",
-                        MethodType.methodType(MethodHandles.Lookup.class)
-                ).invokeExact();
+                Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+                Field theUnsafe = unsafeClass.getDeclaredField("theUnsafe");
+                theUnsafe.setAccessible(true);
+                Object unsafe = theUnsafe.get(null);
+                Field implLookup = MethodHandles.Lookup.class.getDeclaredField("IMPL_LOOKUP");
+                Method staticFieldBase = unsafeClass.getMethod("staticFieldBase", Field.class);
+                Method staticFieldOffset = unsafeClass.getMethod("staticFieldOffset", Field.class);
+                Method getObject = unsafeClass.getMethod("getObject", Object.class, long.class);
+                Object base = staticFieldBase.invoke(unsafe, implLookup);
+                long offset = ((Long) staticFieldOffset.invoke(unsafe, implLookup)).longValue();
+                return (MethodHandles.Lookup) getObject.invoke(unsafe, base, offset);
             } catch (Throwable t) {
-                ts[i] = t;
+                return GENERAL_LOOKUP;
             }
         }
-
-        throw fail("MethodHandles.Lookup::IMPL_LOOKUP", ts);
     });
 
-    private static final Function<Class<?>, MethodHandle> UNSAFE_ALLOCATOR = new Function<>() {
-        private static final ConcurrentHashMap<Class<?>, MethodHandle> CACHE = new ConcurrentHashMap<>();
-
-        private static final Function<Class<?>, MethodHandle> COMPUTER = new Function<>() {
-            private static final Supplier<MethodHandle> ALLOCATOR = Suppliers.memoize(() -> {
-                try {
-                    MethodHandles.Lookup LOOKUP = getLookup();
-                    Unsafe U = (Unsafe) LOOKUP.findStaticGetter(Unsafe.class, "theUnsafe", Unsafe.class).invokeExact();
-                    return LOOKUP.findVirtual(Unsafe.class, "allocateInstance", MethodType.methodType(Object.class, Class.class)).bindTo(U);
-                } catch (Throwable t) {
-                    throw fail("Unsafe::allocateInstance", t);
-                }
-            });
-
-            private static final AtomicInteger INDEX = new AtomicInteger(0);
-
-            @Override
-            public MethodHandle apply(Class<?> clazz) {
-                try {
-                    ClassWriter cw = new ClassWriter(0);
-                    cw.visit(
-                            Opcodes.V17, Opcodes.ACC_PUBLIC,
-                            "top/syshub/accountsx/core/utils/UnsafeVM$" + Integer.toHexString(INDEX.getAndIncrement()),
-                            null, "java/lang/Object", null
-                    );
-                    {
-                        MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PRIVATE, "<init>", "()V", null, null);
-                        mv.visitCode();
-                        mv.visitVarInsn(Opcodes.ALOAD, 0);
-                        mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
-                        mv.visitInsn(Opcodes.RETURN);
-                        mv.visitMaxs(1, 1);
-                        mv.visitEnd();
-                    }
-                    {
-                        String targetName = clazz.getName().replace('.', '/');
-                        MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "cast", "(Ljava/lang/Object;)L" + targetName + ";", null, null);
-                        mv.visitCode();
-                        mv.visitVarInsn(Opcodes.ALOAD, 0);
-                        mv.visitTypeInsn(Opcodes.CHECKCAST, targetName);
-                        mv.visitInsn(Opcodes.ARETURN);
-                        mv.visitMaxs(1, 1);
-                        mv.visitEnd();
-                    }
-                    cw.visitEnd();
-
-                    Class<?> adapter = GENERAL_LOOKUP.defineHiddenClass(cw.toByteArray(), true).lookupClass();
-                    return MethodHandles.filterReturnValue(
-                            ALLOCATOR.get().bindTo(clazz),
-                            UnsafeVM.getLookup().findStatic(adapter, "cast", MethodType.methodType(clazz, Object.class))
-                    );
-                } catch (Throwable t) {
-                    throw fail("Unsafe::allocateInstance", t);
-                }
-            }
-        };
-
-        @Override
-        public MethodHandle apply(Class<?> clazz) {
-            return CACHE.computeIfAbsent(clazz, COMPUTER);
-        }
-    };
+    private static final ConcurrentHashMap<Class<?>, MethodHandle> UNSAFE_ALLOCATOR_CACHE = new ConcurrentHashMap<Class<?>, MethodHandle>();
 
     public static MethodHandles.Lookup getLookup() {
         return IMPL_LOOKUP.get();
     }
 
     public static MethodHandle getClassAllocator(Class<?> clazz) {
-        return UNSAFE_ALLOCATOR.apply(clazz);
+        MethodHandle allocator = UNSAFE_ALLOCATOR_CACHE.get(clazz);
+        if (allocator != null) {
+            return allocator;
+        }
+
+        try {
+            allocator = GENERAL_LOOKUP.findStatic(UnsafeVM.class, "allocateInstance", MethodType.methodType(Object.class, Class.class))
+                    .bindTo(clazz)
+                    .asType(MethodType.methodType(clazz));
+            MethodHandle existing = UNSAFE_ALLOCATOR_CACHE.putIfAbsent(clazz, allocator);
+            return existing == null ? allocator : existing;
+        } catch (Throwable t) {
+            throw fail("Unsafe::allocateInstance", t);
+        }
+    }
+
+    private static Object allocateInstance(Class<?> clazz) throws Throwable {
+        Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+        Field theUnsafe = unsafeClass.getDeclaredField("theUnsafe");
+        theUnsafe.setAccessible(true);
+        Object unsafe = theUnsafe.get(null);
+        Method allocateInstance = unsafeClass.getMethod("allocateInstance", Class.class);
+        return allocateInstance.invoke(unsafe, clazz);
     }
 
     public interface MethodHandleProvider {

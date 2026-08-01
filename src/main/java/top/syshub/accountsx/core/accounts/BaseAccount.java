@@ -52,13 +52,13 @@ public abstract class BaseAccount {
     }
 
     public static final class AccountStorage {
-        private final String accessToken;
+        private String accessToken;
 
-        private final String playerName;
+        private String playerName;
 
-        private final UUID playerUUID;
+        private UUID playerUUID;
 
-        private final transient AccountState state;
+        private transient AccountState state;
 
         private AccountStorage() {
             this.accessToken = null;
@@ -87,15 +87,15 @@ public abstract class BaseAccount {
         }
 
         public AccountState getState() {
-            return state;
+            return state == null ? AccountState.UNAUTHORIZED : state;
         }
     }
 
     protected volatile AccountStorage storage;
 
-    private final AccountType type;
+    private AccountType type;
 
-    private final String accountName;
+    private String accountName;
 
     private String avatar;
 
@@ -138,6 +138,10 @@ public abstract class BaseAccount {
         Threading.checkAccountWorkerThread();
 
         AccountStorage s = this.storage;
+        if (s == null) {
+            this.storage = new AccountStorage(null, null, null, state);
+            return;
+        }
         this.storage = new AccountStorage(s.accessToken, s.playerName, s.playerUUID, state);
     }
 }

@@ -1,0 +1,355 @@
+plugins {
+    id 'java'
+    id 'com.gtnewhorizons.retrofuturagradle' version '1.4.9'
+}
+
+group = 'top.syshub.accountsx'
+version = project.findProperty('version') ?: '1.0.0'
+
+base {
+    archivesName = 'AccountsX'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
+
+minecraft {
+    mcVersion = '1.12.2'
+    mcpMappingChannel = 'stable'
+    mcpMappingVersion = '39'
+}
+
+dependencies {
+    compileOnly 'com.google.code.gson:gson:2.8.9'
+    compileOnly 'com.google.guava:guava:21.0'
+    compileOnly 'org.apache.httpcomponents:httpclient:4.3.3'
+    compileOnly 'org.apache.logging.log4j:log4j-api:2.8.1'
+    compileOnly 'org.ow2.asm:asm:5.2'
+}
+
+def originalMcpPatchesDir = new File(gradle.gradleUserHomeDir, 'caches/minecraft/de/oceanlabs/mcp/mcp_stable/39/patches/minecraft_merged_ff')
+def patchedMcpPatchesDir = layout.buildDirectory.dir('rfg/mcp-patches/minecraft_merged_ff')
+def prepareMcpPatches = tasks.register('prepareMcpPatches', Sync) {
+    from originalMcpPatchesDir
+    into patchedMcpPatchesDir
+    outputs.upToDateWhen { false }
+    filesMatching('net.minecraft.client.renderer.block.statemap.StateMap.java.patch') {
+        filter { line ->
+            line.replace(
+                    'return p_187490_1_.func_177702_a(p_187490_2_.remove(this.field_178142_a));',
+                    'return p_187490_1_.func_177702_a((Comparable)p_187490_2_.remove(this.field_178142_a));'
+            ).replace(
+                    'return p_187490_1_.func_177702_a((T)p_187490_2_.remove(this.field_178142_a));',
+                    'return p_187490_1_.func_177702_a((T)p_187490_2_.remove(this.field_178142_a));'
+            )
+        }
+    }
+    filesMatching('net.minecraft.util.math.Cartesian.java.patch') {
+        filter { line ->
+            line.replace(
+                    'return Arrays.<T>asList(p_apply_1_);',
+                    'return Arrays.asList(p_apply_1_);'
+            )
+        }
+    }
+    filesMatching('net.minecraft.block.state.pattern.BlockStateMatcher.java.patch') {
+        filter { line ->
+            line.replace(
+                    'if (!this.func_185927_a(p_apply_1_, entry.getKey(), entry.getValue())) {',
+                    'if (!this.func_185927_a(p_apply_1_, (IProperty)entry.getKey(), (Predicate)entry.getValue())) {'
+            )
+        }
+    }
+    filesMatching('net.minecraft.client.settings.KeyBinding.java.patch') {
+        filter { line ->
+            line.replace(
+                    'KeyBinding keybinding = field_74516_a.get(p_193626_0_);',
+                    'KeyBinding keybinding = (KeyBinding)field_74516_a.get(p_193626_0_);'
+            )
+        }
+    }
+    filesMatching('net.minecraft.client.gui.GuiSnooper.java.patch') {
+        filter { line ->
+            line.replace(
+                    'this.field_146609_h.add(this.field_146289_q.func_78269_a(entry.getValue(), this.field_146294_l - 220));',
+                    'this.field_146609_h.add(this.field_146289_q.func_78269_a((String)entry.getValue(), this.field_146294_l - 220));'
+            ).replace(
+                    'this.field_146609_h.add(this.field_146289_q.func_78269_a(entry1.getValue(), this.field_146294_l - 220));',
+                    'this.field_146609_h.add(this.field_146289_q.func_78269_a((String)entry1.getValue(), this.field_146294_l - 220));'
+            )
+        }
+    }
+    filesMatching('net.minecraft.command.EntitySelector.java.patch') {
+        filter { line ->
+            line.replace(
+                    'return Collections.<T>emptyList();',
+                    'return Collections.emptyList();'
+            ).replace(
+                    'return Lists.<T>newArrayList(entity);',
+                    'return Lists.newArrayList(entity);'
+            )
+        }
+    }
+    filesMatching('net.minecraft.client.util.SearchTree.java.patch') {
+        filter { line ->
+            line.replace(
+                    '(this.field_194047_d.apply(p_194042_1_)).forEach((p_194039_2_) -> {',
+                    '((Iterable)this.field_194047_d.apply(p_194042_1_)).forEach((p_194039_2_) -> {'
+            ).replace(
+                    '(this.field_194046_c.apply(p_194042_1_)).forEach((p_194041_2_) -> {',
+                    '((Iterable)this.field_194046_c.apply(p_194042_1_)).forEach((p_194041_2_) -> {'
+            )
+        }
+    }
+    filesMatching('net.minecraft.client.renderer.entity.RenderManager.java.patch') {
+        filter { line ->
+            line.replace(
+                    'RenderPlayer renderplayer = this.field_178636_l.get(s);',
+                    'RenderPlayer renderplayer = (RenderPlayer)this.field_178636_l.get(s);'
+            )
+        }
+    }
+    filesMatching('net.minecraft.world.World.java.patch') {
+        filter { line ->
+            line.replace(
+                    'return String.valueOf((Object)TileEntity.func_190559_a(p_194305_0_.getClass()));',
+                    'return String.valueOf(TileEntity.func_190559_a(p_194305_0_.getClass()));'
+            )
+        }
+    }
+    filesMatching('net.minecraft.advancements.PlayerAdvancements.java.patch') {
+        filter { line ->
+            line.replace(
+                    'Advancement advancement = this.field_192756_d.func_191949_aK().func_192778_a(entry.getKey());',
+                    'Advancement advancement = this.field_192756_d.func_191949_aK().func_192778_a((ResourceLocation)entry.getKey());'
+            )
+        }
+    }
+}
+
+def originalForgePatchesZip = new File(gradle.gradleUserHomeDir, 'caches/minecraft/net/minecraftforge/forge/1.12.2-14.23.5.2847/unpacked/patches.zip')
+def patchedForgePatchesDir = layout.buildDirectory.dir('rfg/forge-patches')
+def prepareForgePatches = tasks.register('prepareForgePatches', Sync) {
+    from { zipTree(originalForgePatchesZip) }
+    into patchedForgePatchesDir
+    outputs.upToDateWhen { false }
+    filesMatching('**/*.patch') {
+        filter { line ->
+            line.replace('(Object)', '')
+                    .replace('(Object[])', '')
+                    .replace('(Throwable)', '')
+                    .replace('Collections.<Biome.SpawnListEntry>emptyList()', 'Collections.emptyList()')
+                    .replace('new ArrayList<Integer>', 'new ArrayList')
+                    .replace('(Entity)p_191304_0_.getConstructor', 'p_191304_0_.getConstructor')
+                    .replace('(EntityLiving)biome$spawnlistentry.field_76300_b.getConstructor', 'biome$spawnlistentry.field_76300_b.getConstructor')
+                    .replace('(BlockPos)this.field_177447_w.poll()', 'this.field_177447_w.poll()')
+                    .replaceAll(/\(([A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*)\)(?=[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*\.(?:get|put|newInstance)\()/, '')
+                    .replaceAll(/\(([A-Za-z_$][A-Za-z0-9_$]*)\)(?=(?:this\.)?[A-Za-z_$][A-Za-z0-9_$]*\.get\()/, '')
+                    .replaceAll(/\(([A-Za-z_$][A-Za-z0-9_$]*)\)(?=entry[0-9]*\.get(?:Key|Value)\(\))/, '')
+                    .replaceAll(/\(([A-Za-z_$][A-Za-z0-9_$]*)\)(?=iterator\.next\(\))/, '')
+                    .replaceAll(/\(([A-Za-z_$][A-Za-z0-9_$]*)\)(?=list[0-9]*\.get\()/, '')
+                    .replaceAll(/\(([A-Za-z_$][A-Za-z0-9_$]*)\)(?=map\.get\()/, '')
+        }
+    }
+}
+
+def patchedForgePatchesZip = tasks.register('patchedForgePatchesZip', Zip) {
+    dependsOn prepareForgePatches
+    from patchedForgePatchesDir
+    archiveFileName = 'forge-patches-normalized.zip'
+    destinationDirectory = layout.buildDirectory.dir('rfg')
+}
+
+def normalizedCleanedMinecraftSourcesDir = layout.buildDirectory.dir('rfg/normalized-cleaned-sources')
+def normalizeCleanedMinecraftSources = tasks.register('normalizeCleanedMinecraftSources', Sync) {
+    dependsOn tasks.named('cleanupDecompSrgJar')
+    onlyIf {
+        tasks.named('cleanupDecompSrgJar').get().outputJar.get().asFile.exists() ||
+                !normalizedCleanedMinecraftSourcesDir.get().asFile.exists()
+    }
+    from {
+        def cleanedJar = tasks.named('cleanupDecompSrgJar').get().outputJar.get().asFile
+        cleanedJar.exists() ? zipTree(cleanedJar) : files()
+    }
+    into normalizedCleanedMinecraftSourcesDir
+    filesMatching('**/*.java') {
+        filter { line ->
+            line.replace('(Object)', '')
+                    .replace('(Object[])', '')
+                    .replace('Collections.<Biome.SpawnListEntry>emptyList()', 'Collections.emptyList()')
+                    .replace('new ArrayList<Integer>', 'new ArrayList')
+                    .replace('(Entity)p_191304_0_.getConstructor', 'p_191304_0_.getConstructor')
+                    .replace('(EntityLiving)biome$spawnlistentry.field_76300_b.getConstructor', 'biome$spawnlistentry.field_76300_b.getConstructor')
+                    .replace('(BlockPos)this.field_177447_w.poll()', 'this.field_177447_w.poll()')
+                    .replaceAll(/\(([A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*)\)(?=[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*\.(?:get|put|newInstance)\()/, '')
+                    .replaceAll(/\(([A-Za-z_$][A-Za-z0-9_$]*)\)(?=(?:this\.)?[A-Za-z_$][A-Za-z0-9_$]*\.get\()/, '')
+                    .replaceAll(/\(([A-Za-z_$][A-Za-z0-9_$]*)\)(?=entry[0-9]*\.get(?:Key|Value)\(\))/, '')
+                    .replaceAll(/\(([A-Za-z_$][A-Za-z0-9_$]*)\)(?=iterator\.next\(\))/, '')
+                    .replaceAll(/\(([A-Za-z_$][A-Za-z0-9_$]*)\)(?=list[0-9]*\.get\()/, '')
+                    .replaceAll(/\(([A-Za-z_$][A-Za-z0-9_$]*)\)(?=map\.get\()/, '')
+        }
+    }
+}
+
+def normalizedCleanedMinecraftSourcesJar = tasks.register('normalizedCleanedMinecraftSourcesJar', Jar) {
+    dependsOn normalizeCleanedMinecraftSources
+    from normalizedCleanedMinecraftSourcesDir
+    archiveFileName = 'srg_merged_minecraft-sources-normalized.jar'
+    destinationDirectory = layout.buildDirectory.dir('rfg')
+}
+
+def fixPatchedMinecraftSources = tasks.register('fixPatchedMinecraftSources') {
+    dependsOn tasks.named('decompressDecompiledSources')
+    mustRunAfter tasks.named('decompressDecompiledSources')
+    doLast {
+        def srcDir = layout.buildDirectory.dir('rfg/minecraft-src/java').get().asFile
+        def replaceIn = { String path, Map<String, String> replacements ->
+            def file = new File(srcDir, path)
+            def text = file.getText('UTF-8')
+            replacements.each { from, to ->
+                text = text.replace(from, to)
+            }
+            file.setText(text, 'UTF-8')
+        }
+
+        replaceIn('net/minecraft/nbt/NBTTagCompound.java', [
+                'return (this.tagMap.get(key)).getByte();': 'return ((NBTTagByte)this.tagMap.get(key)).getByte();',
+                'return (this.tagMap.get(key)).getShort();': 'return ((NBTTagShort)this.tagMap.get(key)).getShort();',
+                'return (this.tagMap.get(key)).getInt();': 'return ((NBTTagInt)this.tagMap.get(key)).getInt();',
+                'return (this.tagMap.get(key)).getLong();': 'return ((NBTTagLong)this.tagMap.get(key)).getLong();',
+                'return (this.tagMap.get(key)).getFloat();': 'return ((NBTTagFloat)this.tagMap.get(key)).getFloat();',
+                'return (this.tagMap.get(key)).getDouble();': 'return ((NBTTagDouble)this.tagMap.get(key)).getDouble();',
+                'return (this.tagMap.get(key)).getByteArray();': 'return ((NBTTagByteArray)this.tagMap.get(key)).getByteArray();',
+                'return (this.tagMap.get(key)).getIntArray();': 'return ((NBTTagIntArray)this.tagMap.get(key)).getIntArray();',
+                'return this.tagMap.get(key);': 'return (NBTTagCompound)this.tagMap.get(key);',
+                'NBTTagList nbttaglist = this.tagMap.get(key);': 'NBTTagList nbttaglist = (NBTTagList)this.tagMap.get(key);'
+        ])
+        replaceIn('net/minecraft/world/WorldServer.java', [
+                'EntityPlayerMP entityplayermp = this.playerEntities.get(i);': 'EntityPlayerMP entityplayermp = (EntityPlayerMP)this.playerEntities.get(i);'
+        ])
+        replaceIn('net/minecraft/client/Minecraft.java', [
+                'displaymode3 = iterator.next();': 'displaymode3 = (DisplayMode)iterator.next();'
+        ])
+        replaceIn('net/minecraft/client/network/NetHandlerPlayClient.java', [
+                'IRecipe irecipe = iterator.next();': 'IRecipe irecipe = (IRecipe)iterator.next();'
+        ])
+        replaceIn('net/minecraft/network/datasync/EntityDataManager.java', [
+                'dataentry = this.entries.get(Integer.valueOf(key.getId()));': 'dataentry = (EntityDataManager.DataEntry<T>)this.entries.get(Integer.valueOf(key.getId()));'
+        ])
+        replaceIn('net/minecraft/client/renderer/entity/RenderManager.java', [
+                'Render<T> render = this.entityRenderMap.get(entityClass);': 'Render<T> render = (Render<T>)this.entityRenderMap.get(entityClass);'
+        ])
+        replaceIn('net/minecraft/client/util/SearchTreeManager.java', [
+                'return this.trees.get(key);': 'return (ISearchTree<T>)this.trees.get(key);'
+        ])
+        replaceIn('net/minecraft/client/resources/ResourceIndex.java', [
+                'JsonObject jsonobject2 = entry.getValue();': 'JsonObject jsonobject2 = (JsonObject)entry.getValue();'
+        ])
+        replaceIn('net/minecraft/client/gui/GuiOverlayDebug.java', [
+                'iproperty = entry.getKey();': 'iproperty = (IProperty<T>)entry.getKey();',
+                'T t = entry.getValue();': 'T t = (T)entry.getValue();'
+        ])
+        replaceIn('net/minecraft/client/util/SearchTree.java', [
+                'this.byName.add(element, p_194041_2_.toLowerCase(Locale.ROOT));': 'this.byName.add(element, ((String)p_194041_2_).toLowerCase(Locale.ROOT));'
+        ])
+        replaceIn('net/minecraft/entity/player/InventoryPlayer.java', [
+                'ItemStack itemstack = iterator.next();': 'ItemStack itemstack = (ItemStack)iterator.next();'
+        ])
+        replaceIn('net/minecraft/village/VillageSiege.java', [
+                'EntityPlayer entityplayer = iterator.next();': 'EntityPlayer entityplayer = (EntityPlayer)iterator.next();'
+        ])
+        replaceIn('net/minecraft/entity/EntityTrackerEntry.java', [
+                'this.updatePlayerEntity(players.get(i));': 'this.updatePlayerEntity((EntityPlayerMP)players.get(i));'
+        ])
+        replaceIn('net/minecraft/advancements/CriteriaTriggers.java', [
+                'return REGISTRY.get(id);': 'return (ICriterionTrigger<T>)REGISTRY.get(id);'
+        ])
+        replaceIn('net/minecraft/block/BlockRailDetector.java', [
+                'return Container.calcRedstoneFromInventory(list1.get(0));': 'return Container.calcRedstoneFromInventory((IInventory)list1.get(0));'
+        ])
+        replaceIn('net/minecraft/block/state/pattern/BlockStateMatcher.java', [
+                'if (!this.matches(p_apply_1_, entry.getKey(), entry.getValue()))': 'if (!this.matches(p_apply_1_, (IProperty)entry.getKey(), (Predicate)entry.getValue()))'
+        ])
+        replaceIn('net/minecraft/client/gui/recipebook/GuiButtonRecipeTab.java', [
+                'IRecipe irecipe = iterator.next();': 'IRecipe irecipe = (IRecipe)iterator.next();'
+        ])
+        replaceIn('net/minecraft/world/end/DragonFightManager.java', [
+                'int i = (iterator.next()).intValue();': 'int i = ((Integer)iterator.next()).intValue();'
+        ])
+        replaceIn('net/minecraft/client/renderer/tileentity/TileEntityRendererDispatcher.java', [
+                'TileEntitySpecialRenderer<T> tileentityspecialrenderer = this.renderers.get(teClass);': 'TileEntitySpecialRenderer<T> tileentityspecialrenderer = (TileEntitySpecialRenderer<T>)this.renderers.get(teClass);'
+        ])
+        replaceIn('net/minecraft/client/resources/FolderResourcePack.java', [
+                'file1.listFiles(DirectoryFileFilter.DIRECTORY)': 'file1.listFiles((java.io.FileFilter)DirectoryFileFilter.DIRECTORY)'
+        ])
+        replaceIn('net/minecraft/client/resources/SimpleResource.java', [
+                'T t = this.mapMetadataSections.get(sectionName);': 'T t = (T)this.mapMetadataSections.get(sectionName);'
+        ])
+        replaceIn('net/minecraft/command/CommandBase.java', [
+                'String s = iterator.next();': 'String s = (String)iterator.next();'
+        ])
+        replaceIn('net/minecraft/entity/ai/EntityAIWanderAvoidWaterFlying.java', [
+                'blockpos1 = iterator.next();': 'blockpos1 = (BlockPos)iterator.next();'
+        ])
+        replaceIn('net/minecraft/tileentity/TileEntityHopper.java', [
+                'iinventory = list.get(worldIn.rand.nextInt(list.size()));': 'iinventory = (IInventory)list.get(worldIn.rand.nextInt(list.size()));'
+        ])
+        replaceIn('net/minecraft/world/storage/loot/conditions/LootConditionManager.java', [
+                'LootCondition.Serializer<T> serializer = CLASS_TO_SERIALIZER_MAP.get(conditionClass.getClass());': 'LootCondition.Serializer<T> serializer = (LootCondition.Serializer<T>)CLASS_TO_SERIALIZER_MAP.get(conditionClass.getClass());'
+        ])
+        replaceIn('net/minecraft/world/storage/loot/functions/LootFunctionManager.java', [
+                'LootFunction.Serializer<T> serializer = CLASS_TO_SERIALIZER_MAP.get(functionClass.getClass());': 'LootFunction.Serializer<T> serializer = (LootFunction.Serializer<T>)CLASS_TO_SERIALIZER_MAP.get(functionClass.getClass());'
+        ])
+    }
+}
+
+processResources {
+    inputs.property 'version', project.version
+
+    filesMatching('mcmod.info') {
+        expand 'version': project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    javaCompiler = javaToolchains.compilerFor {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    options.encoding = 'UTF-8'
+    options.release = 8
+}
+
+tasks.withType(com.gtnewhorizons.retrofuturagradle.mcp.DecompileTask).configureEach {
+    java8Launcher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    java17Launcher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+tasks.named('cleanupDecompSrgJar', com.gtnewhorizons.retrofuturagradle.mcp.CleanupDecompiledJarTask).configure {
+    dependsOn prepareMcpPatches
+    outputs.upToDateWhen { false }
+    patches.set(patchedMcpPatchesDir)
+}
+
+tasks.named('patchDecompiledJar', com.gtnewhorizons.retrofuturagradle.mcp.PatchSourcesTask).configure {
+    dependsOn patchedForgePatchesZip
+    dependsOn normalizedCleanedMinecraftSourcesJar
+    outputs.upToDateWhen { false }
+    inputJar.set(normalizedCleanedMinecraftSourcesJar.flatMap { it.archiveFile })
+    patches.setFrom(patchedForgePatchesZip.flatMap { it.archiveFile })
+}
+
+tasks.named('compilePatchedMcJava').configure {
+    dependsOn fixPatchedMinecraftSources
+}
+
+afterEvaluate {
+    tasks.named('patchDecompiledJar', com.gtnewhorizons.retrofuturagradle.mcp.PatchSourcesTask).configure {
+        patches.setFrom(patchedForgePatchesZip.flatMap { it.archiveFile })
+    }
+}

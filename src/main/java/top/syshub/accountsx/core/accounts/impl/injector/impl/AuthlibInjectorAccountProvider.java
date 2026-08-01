@@ -44,8 +44,12 @@ public final class AuthlibInjectorAccountProvider extends AbstractInjectorAccoun
                 } else {
                     if (redirects == 0) {
                         URI baseUri = URI.create(api);
-                        return baseUri.getScheme() + "://" + baseUri.getAuthority() + "/api/yggdrasil";
-                    } else return api;
+                        String path = baseUri.getPath();
+                        if (path != null && path.endsWith("/api/yggdrasil")) {
+                            return ensureTrailingSlash(api);
+                        }
+                        return baseUri.getScheme() + "://" + baseUri.getAuthority() + "/api/yggdrasil/";
+                    } else return ensureTrailingSlash(api);
                 }
             } catch (IOException e) {
                 throw new RuntimeException(e);
@@ -63,14 +67,24 @@ public final class AuthlibInjectorAccountProvider extends AbstractInjectorAccoun
         }
     }
 
+    private static String ensureTrailingSlash(String url) {
+        return url.endsWith("/") ? url : url + "/";
+    }
+
     @Override
-    protected AuthlibInjectorAccount createAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID, String accountName, String avatar) {
-        return new AuthlibInjectorAccount(accessToken, playerName, playerUUID, server, preferredPlayerUUID, accountName, avatar);
+    protected AuthlibInjectorAccount createAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID,
+                                                   String clientToken, String accountName, String avatar) {
+        return new AuthlibInjectorAccount(accessToken, playerName, playerUUID, server, preferredPlayerUUID, clientToken, accountName, avatar);
     }
 
     public static class AuthlibInjectorAccount extends AbstractInjectorAccount {
         public AuthlibInjectorAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID, String accountName, String avatar) {
             super(accessToken, playerName, playerUUID, server, preferredPlayerUUID, AccountType.AUTHLIB_INJECTOR, accountName, avatar);
+        }
+
+        public AuthlibInjectorAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID,
+                                      String clientToken, String accountName, String avatar) {
+            super(accessToken, playerName, playerUUID, server, preferredPlayerUUID, clientToken, AccountType.AUTHLIB_INJECTOR, accountName, avatar);
         }
     }
 }

@@ -20,6 +20,7 @@
   "accountsx.account.state.authorized.name": "正常可用",
   "accountsx.account.state.authorizing.name": "登录中",
   "accountsx.account.state.unauthorized.name": "未登录",
+  "accountsx.account.type.authlib_injector.named": "%s | 外置登录",
   "accountsx.account.type.authlib_injector.name": "外置登录账号",
   "accountsx.account.type.authlib_injector.using": "正在使用外置登录账号：%s",
   "accountsx.account.type.env_default.name": "游戏默认账户",

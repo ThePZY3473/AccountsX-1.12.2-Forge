@@ -3,6 +3,8 @@ package top.syshub.accountsx.core.manager;
 import top.syshub.accountsx.core.AccountsX;
 import top.syshub.accountsx.core.accounts.AccountProvider;
 import top.syshub.accountsx.core.accounts.BaseAccount;
+import top.syshub.accountsx.core.accounts.impl.injector.AbstractInjectorAccount;
+import top.syshub.accountsx.core.accounts.impl.offline.OfflineAccount;
 import top.syshub.accountsx.core.accounts.model.AccountState;
 import top.syshub.accountsx.core.accounts.model.AccountType;
 import top.syshub.accountsx.core.accounts.model.PlayerNoLongerExistedException;
@@ -41,7 +43,7 @@ public final class AccountManager {
 
         List<BaseAccount> toRefresh = new ArrayList<>();
         for (BaseAccount account : accounts) {
-            if (account.getAccountStorage().getState() != AccountState.AUTHORIZED) {
+            if (account.getAccountStorage().getState() != AccountState.AUTHORIZED || isProfileIncomplete(account)) {
                 toRefresh.add(account);
             }
         }
@@ -86,10 +88,14 @@ public final class AccountManager {
     public static AccountSession loginAccount(BaseAccount account) throws IOException {
         Threading.checkAccountWorkerThread();
 
-        if (account.getAccountStorage().getState() != AccountState.AUTHORIZED) {
+        if (account.getAccountStorage().getState() != AccountState.AUTHORIZED || isProfileIncomplete(account)) {
             refreshAccount(account, true);
 
             save();
+        }
+
+        if (isProfileIncomplete(account)) {
+            throw new IOException("Cannot switch account because the saved profile is incomplete: " + describeProfile(account));
         }
 
         return Adapters.getAuthlibAdpater().createAccountProfile(
@@ -155,6 +161,7 @@ public final class AccountManager {
                 Thread.currentThread().interrupt();
             }
         }
+        save();
     }
 
     private static Thread getThread(BaseAccount account, CountDownLatch latch) {
@@ -176,6 +183,40 @@ public final class AccountManager {
         return t;
     }
 
+    private static boolean isProfileIncomplete(BaseAccount account) {
+        if (account.getAccountType() == AccountType.ENV_DEFAULT) {
+            return false;
+        }
+        BaseAccount.AccountStorage storage = account.getAccountStorage();
+        return storage == null ||
+                storage.getAccessToken() == null || storage.getAccessToken().isEmpty() ||
+                storage.getPlayerName() == null || storage.getPlayerName().isEmpty() ||
+                storage.getPlayerUUID() == null;
+    }
+
+    private static String describeProfile(BaseAccount account) {
+        BaseAccount.AccountStorage storage = account.getAccountStorage();
+        StringBuilder builder = new StringBuilder();
+        builder.append("type=").append(account.getAccountType());
+        builder.append(", storage=").append(storage == null ? "null" : "present");
+        if (storage != null) {
+            builder.append(", accessToken=").append(storage.getAccessToken() == null || storage.getAccessToken().isEmpty() ? "missing" : "present");
+            builder.append(", playerName=").append(storage.getPlayerName() == null || storage.getPlayerName().isEmpty() ? "missing" : "present");
+            builder.append(", playerUUID=").append(storage.getPlayerUUID() == null ? "missing" : "present");
+            builder.append(", state=").append(storage.getState());
+        }
+        if (account instanceof AbstractInjectorAccount) {
+            AbstractInjectorAccount injector = (AbstractInjectorAccount) account;
+            builder.append(", server=").append(injector.getServer() == null || injector.getServer().isEmpty() ? "missing" : injector.getServer());
+            builder.append(", loginToken=").append(injector.getLoginToken() == null || injector.getLoginToken().isEmpty() ? "missing" : "present");
+            builder.append(", clientToken=").append(injector.getClientToken() == null || injector.getClientToken().isEmpty() ? "missing" : "present");
+            builder.append(", preferredPlayerUUID=").append(injector.getPreferredPlayerUUID() == null || injector.getPreferredPlayerUUID().isEmpty() ? "missing" : "present");
+        } else if (account instanceof OfflineAccount) {
+            builder.append(", offlineAccount=true");
+        }
+        return builder.toString();
+    }
+
     public static String handleException(Throwable t) {
         if (t instanceof PlayerNoLongerExistedException) {
             return "accountsx.account.fail.player_no_longer_existed";
@@ -185,6 +226,10 @@ public final class AccountManager {
     }
 
     private static void save() {
-        AccountWorker.submit(ConfigHandle::write);
+        try {
+            ConfigHandle.write();
+        } catch (IOException e) {
+            AccountsX.LOGGER.warn("Cannot save the config file.", e);
+        }
     }
 }

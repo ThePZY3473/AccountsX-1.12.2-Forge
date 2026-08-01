@@ -54,7 +54,7 @@ public enum AccountType {
     }
 
     public static class AccountTypeAdapter extends TypeAdapter<AccountType> {
-        private static final Map<String, AccountType> LOOKUP = Arrays.stream(AccountType.CONFIGURABLE_VALUES).collect(Collectors.toUnmodifiableMap(
+        private static final Map<String, AccountType> LOOKUP = Arrays.stream(AccountType.CONFIGURABLE_VALUES).collect(Collectors.toMap(
                 type -> type.id, Function.identity()
         ));
 

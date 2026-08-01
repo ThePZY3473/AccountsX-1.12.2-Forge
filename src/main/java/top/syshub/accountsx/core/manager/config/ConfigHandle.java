@@ -1,5 +1,6 @@
 package top.syshub.accountsx.core.manager.config;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
@@ -9,7 +10,7 @@ import top.syshub.accountsx.core.accounts.BaseAccount;
 import top.syshub.accountsx.core.accounts.model.AccountType;
 import top.syshub.accountsx.core.manager.AccountManager;
 import top.syshub.accountsx.core.utils.NetworkUtils;
-import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.Minecraft;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -18,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -28,6 +30,16 @@ public final class ConfigHandle {
 
     private static final String CONFIG_LOCATION = "accountsx/accounts.json";
 
+    private static Path getConfigFile() {
+        return Minecraft.getMinecraft().gameDir.toPath().resolve("config").resolve(CONFIG_LOCATION);
+    }
+
+    private static void writeString(Path file, String text) throws IOException {
+        try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
+            writer.write(text);
+        }
+    }
+
     private static final class Config {
         public static final int CURRENT_VERSION = ConfigVersion.VALUES[ConfigVersion.VALUES.length - 1].getVersion();
 
@@ -35,30 +47,32 @@ public final class ConfigHandle {
 
         private final String id;
 
+        private final List<BaseAccount> accounts;
+
         private Config(List<BaseAccount> accounts) {
             this.version = CURRENT_VERSION;
             if (ConfigHandle.id == null)
                 ConfigHandle.id = UUID.randomUUID().toString();
 
             id = ConfigHandle.id;
-            writeAccounts(id, NetworkUtils.GSON.toJson(accounts));
+            this.accounts = accounts;
         }
     }
 
     public static List<? extends BaseAccount> load() {
-        Path configFile = FabricLoader.getInstance().getConfigDir().resolve(CONFIG_LOCATION);
+        Path configFile = getConfigFile();
 
         try {
             if (!Files.exists(configFile)) {
                 Files.createDirectories(configFile.getParent());
-                Files.writeString(configFile, NetworkUtils.GSON.toJson(new Config(List.of())));
-                return List.of();
+                writeString(configFile, NetworkUtils.GSON.toJson(new Config(Collections.<BaseAccount>emptyList())));
+                return Collections.emptyList();
             }
 
             if (!Files.isRegularFile(configFile)) {
                 Files.delete(configFile);
-                Files.writeString(configFile, NetworkUtils.GSON.toJson(new Config(List.of())));
-                return List.of();
+                writeString(configFile, NetworkUtils.GSON.toJson(new Config(Collections.<BaseAccount>emptyList())));
+                return Collections.emptyList();
             }
 
             JsonElement data;
@@ -66,8 +80,10 @@ public final class ConfigHandle {
                 data = NetworkUtils.GSON.fromJson(reader, JsonElement.class);
             }
 
-            if (data instanceof JsonObject jo) {
-                if (jo.get("version") instanceof JsonPrimitive versionJP && versionJP.isNumber()) {
+            if (data instanceof JsonObject) {
+                JsonObject jo = (JsonObject) data;
+                if (jo.get("version") instanceof JsonPrimitive && ((JsonPrimitive) jo.get("version")).isNumber()) {
+                    JsonPrimitive versionJP = (JsonPrimitive) jo.get("version");
                     int configVersion = versionJP.getAsNumber().intValue();
 
                     for (ConfigVersion value : ConfigVersion.VALUES) {
@@ -82,19 +98,25 @@ public final class ConfigHandle {
                     } catch (Exception e) {
                         id = UUID.randomUUID().toString();
                     }
-                    return getAccounts();
+                    if (jo.get("accounts") instanceof JsonArray) {
+                        return NetworkUtils.GSON.fromJson(
+                                jo.get("accounts"),
+                                new TypeToken<List<BaseAccount>>() {}.getType()
+                        );
+                    }
+                    return getLegacyAccounts();
                 }
             }
 
             throw new IllegalStateException("Illegal config.");
         } catch (Throwable t) {
             AccountsX.LOGGER.warn("Cannot load the config file.", t);
-            return List.of();
+            return Collections.emptyList();
         }
     }
 
     public static void write() throws IOException {
-        Path configFile = FabricLoader.getInstance().getConfigDir().resolve(CONFIG_LOCATION);
+        Path configFile = getConfigFile();
 
         List<BaseAccount> accounts = new ArrayList<>();
 
@@ -104,18 +126,19 @@ public final class ConfigHandle {
             }
         }
 
+        Files.createDirectories(configFile.getParent());
         try (Writer writer = Files.newBufferedWriter(configFile, StandardCharsets.UTF_8)) {
             NetworkUtils.GSON.toJson(new Config(accounts), writer);
         }
     }
 
-    private static List<? extends BaseAccount> getAccounts() {
+    private static List<? extends BaseAccount> getLegacyAccounts() {
         String userHome = System.getProperty("user.home");
-        Path accountsFile = Path.of(userHome, ".accountsx", id + ".json");
+        Path accountsFile = new java.io.File(new java.io.File(userHome, ".accountsx"), id + ".json").toPath();
 
         try {
             if (!Files.exists(accountsFile) || !Files.isRegularFile(accountsFile))
-                return List.of();
+                return Collections.emptyList();
 
             try (Reader reader = Files.newBufferedReader(accountsFile, StandardCharsets.UTF_8)) {
                 return NetworkUtils.GSON.fromJson(
@@ -130,11 +153,11 @@ public final class ConfigHandle {
 
     static void writeAccounts(String id, String accountString) {
         String userHome = System.getProperty("user.home");
-        Path accountsFile = Path.of(userHome, ".accountsx", id + ".json");
+        Path accountsFile = new java.io.File(new java.io.File(userHome, ".accountsx"), id + ".json").toPath();
 
         try {
             Files.createDirectories(accountsFile.getParent());
-            Files.writeString(accountsFile, accountString);
+            writeString(accountsFile, accountString);
         } catch (IOException e) {
             throw new RuntimeException("Failed to write accounts file", e);
         }

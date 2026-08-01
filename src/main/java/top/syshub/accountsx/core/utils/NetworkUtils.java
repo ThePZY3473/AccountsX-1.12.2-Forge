@@ -5,21 +5,27 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import top.syshub.accountsx.core.accounts.AccountUUID;
+import org.apache.http.Header;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.client.methods.RequestBuilder;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.DefaultRedirectStrategy;
+import org.apache.http.impl.client.HttpClientBuilder;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.net.URI;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 public class NetworkUtils {
@@ -28,35 +34,39 @@ public class NetworkUtils {
             .setPrettyPrinting()
             .create();
 
-    private static final HttpClient CLIENT = HttpClient.newBuilder()
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
+    private static final HttpClientBuilder BUILDER = HttpClientBuilder.create().setRedirectStrategy(new DefaultRedirectStrategy());
 
-    public static HttpRequest buildGet(String url) {
-        return HttpRequest.newBuilder(URI.create(url))
-                .GET()
+    public static HttpUriRequest buildGet(String url) {
+        return RequestBuilder.get()
+                .setUri(url)
                 .build();
     }
 
-    public static HttpRequest buildGet(String url, Map<String, String> headers) {
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).GET();
+    public static HttpUriRequest buildGet(String url, Map<String, String> headers) {
+        RequestBuilder builder = RequestBuilder.get().setUri(url);
         for (Map.Entry<String, String> e : headers.entrySet()) {
-            builder.header(e.getKey(), e.getValue());
+            builder.addHeader(e.getKey(), e.getValue());
         }
         return builder.build();
     }
 
     public static Map<String, List<String>> headRequest(String url) throws IOException {
         URI uri = URI.create(url);
-        HttpRequest request = HttpRequest.newBuilder(uri)
-                .method("HEAD", HttpRequest.BodyPublishers.noBody())
+        HttpUriRequest request = RequestBuilder.get()
+                .setUri(uri)
                 .build();
-        try {
-            HttpResponse<Void> response = CLIENT.send(request, HttpResponse.BodyHandlers.discarding());
-            return response.headers().map();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Interrupted.", e);
+        try (CloseableHttpClient httpClient = BUILDER.build()) {
+            HttpResponse response = httpClient.execute(request);
+            Map<String, List<String>> result = new LinkedHashMap<String, List<String>>();
+            for (Header header : response.getAllHeaders()) {
+                List<String> values = result.get(header.getName());
+                if (values == null) {
+                    values = new ArrayList<String>();
+                    result.put(header.getName(), values);
+                }
+                values.add(header.getValue());
+            }
+            return result;
         }
     }
 
@@ -80,35 +90,33 @@ public class NetworkUtils {
         }
     }
 
-    public static JsonObject postRequest(HttpRequest request) throws IOException {
+    public static JsonObject postRequest(HttpUriRequest request) throws IOException {
         return postRequest(request, false);
     }
 
-    public static JsonObject postRequest(HttpRequest request, boolean ignoreHttpStatus) throws IOException {
-        try {
-            HttpResponse<byte[]> response = CLIENT.send(request, HttpResponse.BodyHandlers.ofByteArray());
-            try (Reader reader = NetworkUtils.readResponse(response, ignoreHttpStatus)) {
+    public static JsonObject postRequest(HttpUriRequest request, boolean ignoreHttpStatus) throws IOException {
+        try (CloseableHttpClient httpClient = BUILDER.build()) {
+            try (Reader reader = NetworkUtils.readResponse(httpClient.execute(request), ignoreHttpStatus)) {
                 return NetworkUtils.GSON.fromJson(reader, JsonObject.class);
             }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Interrupted.", e);
         }
     }
 
     public static JsonObject postRequest(String url, JsonElement json) throws IOException {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(NetworkUtils.GSON.toJson(json)))
+        HttpUriRequest request = RequestBuilder.post()
+                .setUri(url)
+                .addHeader("Content-Type", "application/json")
+                .setEntity(new StringEntity(NetworkUtils.GSON.toJson(json), StandardCharsets.UTF_8))
                 .build();
         return postRequest(request);
     }
 
     public static JsonObject postRequest(String url, Map<String, String> formData, boolean ignoreHttpStatus) throws IOException {
         String body = encodeForm(formData);
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .POST(HttpRequest.BodyPublishers.ofString(body))
+        HttpUriRequest request = RequestBuilder.post()
+                .setUri(url)
+                .addHeader("Content-Type", "application/x-www-form-urlencoded")
+                .setEntity(new StringEntity(body, StandardCharsets.UTF_8))
                 .build();
         return postRequest(request, ignoreHttpStatus);
     }
@@ -120,26 +128,34 @@ public class NetworkUtils {
     private static String encodeForm(Map<String, String> formData) {
         StringBuilder sb = new StringBuilder();
         for (Map.Entry<String, String> entry : formData.entrySet()) {
-            if (!sb.isEmpty()) sb.append('&');
-            sb.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8));
+            if (sb.length() > 0) sb.append('&');
+            sb.append(urlEncode(entry.getKey()));
             sb.append('=');
-            sb.append(URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
+            sb.append(urlEncode(entry.getValue()));
         }
         return sb.toString();
     }
 
-    public static Reader readResponse(HttpResponse<byte[]> response, boolean ignoreHttpStatus) throws IOException {
+    private static String urlEncode(String value) {
+        try {
+            return URLEncoder.encode(value, "UTF-8");
+        } catch (java.io.UnsupportedEncodingException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    public static Reader readResponse(HttpResponse response, boolean ignoreHttpStatus) throws IOException {
         if (!ignoreHttpStatus) {
-            int statusCode = response.statusCode();
+            int statusCode = response.getStatusLine().getStatusCode();
             if (statusCode / 100 != 2) {
-                throw new IOException("HTTP " + statusCode);
+                throw new IOException("HTTP " + statusCode + ": " + response.getStatusLine().getReasonPhrase());
             }
         }
 
         Charset charset = StandardCharsets.UTF_8;
-        Optional<String> contentType = response.headers().firstValue("Content-Type");
-        if (contentType.isPresent()) {
-            String ct = contentType.get().toLowerCase(Locale.ROOT);
+        Header contentType = response.getEntity().getContentType();
+        if (contentType != null) {
+            String ct = contentType.getValue().toLowerCase(Locale.ROOT);
             int idx = ct.indexOf("charset=");
             if (idx != -1) {
                 String cs = ct.substring(idx + 8).trim();
@@ -153,6 +169,6 @@ public class NetworkUtils {
             }
         }
 
-        return new InputStreamReader(new java.io.ByteArrayInputStream(response.body()), charset);
+        return new InputStreamReader(response.getEntity().getContent(), charset);
     }
 }

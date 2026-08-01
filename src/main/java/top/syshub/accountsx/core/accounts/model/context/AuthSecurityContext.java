@@ -5,12 +5,32 @@ import java.net.URISyntaxException;
 import java.security.PublicKey;
 import java.util.List;
 
-public record AuthSecurityContext(
-        List<PublicKey> profilePropertyKeys, List<PublicKey> playerCertificateKeys,
-        SkinURLVerifier skinURLVerifier
-) {
+public final class AuthSecurityContext {
+    private final List<PublicKey> profilePropertyKeys;
+    private final List<PublicKey> playerCertificateKeys;
+    private final SkinURLVerifier skinURLVerifier;
+
+    public AuthSecurityContext(List<PublicKey> profilePropertyKeys, List<PublicKey> playerCertificateKeys,
+                               SkinURLVerifier skinURLVerifier) {
+        this.profilePropertyKeys = profilePropertyKeys;
+        this.playerCertificateKeys = playerCertificateKeys;
+        this.skinURLVerifier = skinURLVerifier;
+    }
+
     public AuthSecurityContext(List<PublicKey> profilePropertyKeys, List<PublicKey> playerCertificateKeys) {
         this(profilePropertyKeys, playerCertificateKeys, SkinURLVerifier.MOJANG_DEFAULT);
+    }
+
+    public List<PublicKey> profilePropertyKeys() {
+        return profilePropertyKeys;
+    }
+
+    public List<PublicKey> playerCertificateKeys() {
+        return playerCertificateKeys;
+    }
+
+    public SkinURLVerifier skinURLVerifier() {
+        return skinURLVerifier;
     }
 
     public boolean checkSkinURL(String url) {

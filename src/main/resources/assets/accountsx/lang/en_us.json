@@ -20,6 +20,7 @@
   "accountsx.account.state.authorized.name": "Available",
   "accountsx.account.state.authorizing.name": "Logging In",
   "accountsx.account.state.unauthorized.name": "Not Logged In",
+  "accountsx.account.type.authlib_injector.named": "%s | External Login",
   "accountsx.account.type.authlib_injector.name": "Yggdrasil API Authentication",
   "accountsx.account.type.authlib_injector.using": "Using Yggdrasil API Authentication Account: %s",
   "accountsx.account.type.env_default.name": "Game Default Account",

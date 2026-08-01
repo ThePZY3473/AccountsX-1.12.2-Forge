@@ -5,7 +5,6 @@ import top.syshub.accountsx.core.accounts.AccountProvider;
 import top.syshub.accountsx.core.accounts.AccountUUID;
 import top.syshub.accountsx.core.accounts.model.PlayerNoLongerExistedException;
 import top.syshub.accountsx.core.accounts.model.context.*;
-import top.syshub.accountsx.core.accounts.model.context.*;
 import top.syshub.accountsx.core.adapters.Adapters;
 import top.syshub.accountsx.core.ui.Memory;
 import top.syshub.accountsx.core.ui.UIScreen;
@@ -43,19 +42,21 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
     protected abstract String transformServerBaseURL(String server);
 
-    protected abstract T createAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID, String accountName, String avatar);
+    protected abstract T createAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID,
+                                       String clientToken, String accountName, String avatar);
 
     @Override
     public final AccountContext createAccountContext(T account) throws IOException {
-        String url = account.getServer();
+        String url = ensureTrailingSlash(account.getServer());
 
         List<PublicKey> publicKeys;
         List<String> skinDomains = new ArrayList<>();
 
         JsonObject response = NetworkUtils.postRequest(NetworkUtils.buildGet(url));
-        if (response.get("signaturePublickey") instanceof JsonPrimitive jp && jp.isString()) {
+        if (response.get("signaturePublickey") instanceof JsonPrimitive && ((JsonPrimitive) response.get("signaturePublickey")).isString()) {
+            JsonPrimitive jp = (JsonPrimitive) response.get("signaturePublickey");
             try {
-                publicKeys = List.of(parseSignaturePublicKey(jp.getAsString()));
+                publicKeys = Collections.singletonList(parseSignaturePublicKey(jp.getAsString()));
             } catch (final NoSuchAlgorithmException | InvalidKeySpecException e) {
                 throw new IOException("Invalid yggdrasil public key!", e);
             }
@@ -63,9 +64,11 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
             throw new IOException("Invalid yggdrasil public key!");
         }
 
-        if (response.get("skinDomains") instanceof JsonArray ja) {
+        if (response.get("skinDomains") instanceof JsonArray) {
+            JsonArray ja = (JsonArray) response.get("skinDomains");
             for (JsonElement je : ja) {
-                if (je instanceof JsonPrimitive domain && domain.isString()) {
+                if (je instanceof JsonPrimitive && ((JsonPrimitive) je).isString()) {
+                    JsonPrimitive domain = (JsonPrimitive) je;
                     skinDomains.add(domain.getAsString());
                 } else {
                     throw new IOException("Invalid yggdrasil public key!");
@@ -83,7 +86,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                 accountContextName
         ), new AuthSecurityContext(
                 publicKeys, publicKeys,
-                SkinURLVerifier.ofOperationOR(SkinURLVerifier.ofDomainVerifier(skinDomains, List.of()), SkinURLVerifier.MOJANG_DEFAULT)
+                SkinURLVerifier.ofOperationOR(SkinURLVerifier.ofDomainVerifier(skinDomains, Collections.<String>emptyList()), SkinURLVerifier.MOJANG_DEFAULT)
         ), AuthPolicy.TRY);
     }
 
@@ -124,9 +127,13 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
     @Override
     public final T login(Memory memory) throws IOException {
         if (memory.get(GUID_USER_NAME, String.class).isEmpty()) return loginOAuth(memory.get(GUID_SERVER_BASE, String.class));
-        String baseUrl = transformServerBaseURL(memory.get(GUID_SERVER_BASE, String.class));
-        String loginUrl = baseUrl + "/authserver/authenticate";
-        String profileUrl = baseUrl + "/sessionserver/session/minecraft/profile/";
+        String filledServer = memory.get(GUID_SERVER_BASE, String.class);
+        String baseUrl = ensureTrailingSlash(transformServerBaseURL(filledServer));
+        String loginUrl = baseUrl + "authserver/authenticate";
+        String apiRoot = baseUrl;
+        String profileUrl = apiRoot + "sessionserver/session/minecraft/profile/";
+        String refreshUrl = apiRoot + "authserver/refresh";
+        String clientToken = AccountUUID.toMinecraftStyleString(UUID.randomUUID());
 
         JsonObject agent = new JsonObject();
         agent.addProperty("name", "Minecraft");
@@ -136,6 +143,8 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         root.add("agent", agent);
         root.addProperty("username", memory.get(GUID_USER_NAME, String.class));
         root.addProperty("password", memory.get(GUID_PASSWORD, String.class));
+        root.addProperty("clientToken", clientToken);
+        root.addProperty("requestUser", true);
 
         JsonObject json = NetworkUtils.postRequest(loginUrl, root);
         if (json.has("error")) {
@@ -143,11 +152,19 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         }
 
         String accessToken = json.get("accessToken").getAsString();
+        clientToken = json.has("clientToken") ? json.get("clientToken").getAsString() : clientToken;
 
         String playerName = memory.get(GUID_PLAYER_NAME, String.class);
         List<Profile> profiles = readProfiles(json);
+        Profile selectedProfile = selectProfile(profiles, playerName);
+        if (json.get("selectedProfile") == null) {
+            json = refreshSession(refreshUrl, accessToken, clientToken, selectedProfile);
+            accessToken = json.get("accessToken").getAsString();
+            clientToken = json.has("clientToken") ? json.get("clientToken").getAsString() : clientToken;
+            profiles = readProfiles(json);
+        }
         if (profiles.size() == 1) {
-            Profile profile = profiles.get(0);
+            Profile profile = ensureProfileName(profileUrl, profiles.get(0));
 
             if (!playerName.isEmpty()) {
                 if (!playerName.equals(profile.playerName)) {
@@ -158,42 +175,63 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
             return createAccount(
                     accessToken, profile.playerName,
                     AccountUUID.parse(profile.playerUUID),
-                    baseUrl,
+                    apiRoot,
                     profile.playerUUID,
-                    getAccountName(baseUrl),
+                    clientToken,
+                    getAccountName(apiRoot),
                     AvatarUtils.getAvatar(profileUrl, profile.playerUUID)
             );
         } else {
-            for (Profile profile : profiles) {
-                if (playerName.equals(profile.playerName)) {
-                    return createAccount(
-                            accessToken,
-                            profile.playerName,
-                            AccountUUID.parse(profile.playerUUID),
-                            baseUrl,
-                            profile.playerUUID,
-                            getAccountName(baseUrl),
-                            AvatarUtils.getAvatar(profileUrl, profile.playerUUID)
-                    );
-                }
-            }
-
-            throw new PlayerNoLongerExistedException("Cannot find player which match " + playerName);
+            Profile profile = ensureProfileName(profileUrl, selectProfile(profiles, playerName));
+            return createAccount(
+                    accessToken,
+                    profile.playerName,
+                    AccountUUID.parse(profile.playerUUID),
+                    apiRoot,
+                    profile.playerUUID,
+                    clientToken,
+                    getAccountName(apiRoot),
+                    AvatarUtils.getAvatar(profileUrl, profile.playerUUID)
+            );
         }
     }
 
     @Override
     public final void refresh(T account) throws IOException {
-        if (account.getLoginToken().startsWith("OAuth ")) {
+        String loginToken = account.getLoginToken();
+        if ((loginToken == null || loginToken.isEmpty()) && account.getAccountStorage() != null) {
+            loginToken = account.getAccountStorage().getAccessToken();
+        }
+        if (loginToken == null || loginToken.isEmpty()) {
+            throw new IOException("Cannot refresh this injector account because the saved access token is missing.");
+        }
+
+        if (loginToken.startsWith("OAuth ")) {
             refreshOAuth(account);
             return;
         }
         String baseUrl = account.getServer();
-        String refreshUrl = baseUrl + "/authserver/refresh";
-        String profileUrl = baseUrl + "/sessionserver/session/minecraft/profile/";
+        String apiRoot = ensureTrailingSlash(baseUrl);
+        String refreshUrl = apiRoot + "authserver/refresh";
+        String profileUrl = apiRoot + "sessionserver/session/minecraft/profile/";
+        String clientToken = account.getClientToken();
+        if (clientToken == null || clientToken.isEmpty()) {
+            clientToken = AccountUUID.toMinecraftStyleString(UUID.randomUUID());
+        }
 
         JsonObject root = new JsonObject();
-        root.addProperty("accessToken", account.getLoginToken());
+        root.addProperty("accessToken", loginToken);
+        root.addProperty("clientToken", clientToken);
+        root.addProperty("requestUser", true);
+        String preferredPlayerUUID = account.getPreferredPlayerUUID();
+        if ((preferredPlayerUUID == null || preferredPlayerUUID.isEmpty()) && account.getAccountStorage() != null && account.getAccountStorage().getPlayerUUID() != null) {
+            preferredPlayerUUID = AccountUUID.toMinecraftStyleString(account.getAccountStorage().getPlayerUUID());
+        }
+        if (preferredPlayerUUID != null && !preferredPlayerUUID.isEmpty()) {
+            JsonObject selectedProfile = new JsonObject();
+            selectedProfile.addProperty("id", preferredPlayerUUID);
+            root.add("selectedProfile", selectedProfile);
+        }
 
         JsonObject json = NetworkUtils.postRequest(refreshUrl, root);
         if (json.has("error")) {
@@ -201,18 +239,18 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         }
 
         String accessToken = json.get("accessToken").getAsString();
+        clientToken = json.has("clientToken") ? json.get("clientToken").getAsString() : clientToken;
 
         List<Profile> profiles = readProfiles(json);
         if (profiles.size() == 1) {
-            Profile profile = profiles.get(0);
-            account.setLoginProfile(accessToken, profile.playerUUID);
+            Profile profile = ensureProfileName(profileUrl, profiles.get(0));
+            account.setLoginProfile(accessToken, profile.playerUUID, clientToken);
             account.setProfile(accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID));
         } else {
-            String preferredPlayerUUID = account.getPreferredPlayerUUID();
-
             for (Profile profile : profiles) {
                 if (profile.playerUUID.equals(preferredPlayerUUID)) {
-                    account.setLoginProfile(accessToken, profile.playerUUID);
+                    profile = ensureProfileName(profileUrl, profile);
+                    account.setLoginProfile(accessToken, profile.playerUUID, clientToken);
                     account.setProfile(accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID));
                     account.setAvatar(AvatarUtils.getAvatar(profileUrl, profile.playerUUID));
                     return;
@@ -221,6 +259,55 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
             throw new PlayerNoLongerExistedException("Cannot find player which match " + preferredPlayerUUID);
         }
+    }
+
+    private static Profile ensureProfileName(String profileUrl, Profile profile) throws IOException {
+        if (profile.playerName != null && !profile.playerName.isEmpty()) {
+            return profile;
+        }
+        try {
+            JsonObject profileJson = NetworkUtils.postRequest(NetworkUtils.buildGet(profileUrl + profile.playerUUID));
+            JsonElement name = profileJson.get("name");
+            if (name instanceof JsonPrimitive && ((JsonPrimitive) name).isString() && !name.getAsString().isEmpty()) {
+                return new Profile(name.getAsString(), profile.playerUUID);
+            }
+        } catch (IOException e) {
+            throw e;
+        } catch (Exception ignored) {
+        }
+        throw new IOException("Cannot resolve player name for injector profile " + profile.playerUUID);
+    }
+
+    private static Profile selectProfile(List<Profile> profiles, String playerName) throws PlayerNoLongerExistedException {
+        if (profiles.size() == 1) {
+            return profiles.get(0);
+        }
+        for (Profile profile : profiles) {
+            if (playerName.equals(profile.playerName)) {
+                return profile;
+            }
+        }
+        throw new PlayerNoLongerExistedException("Cannot find player which match " + playerName);
+    }
+
+    private static JsonObject refreshSession(String refreshUrl, String accessToken, String clientToken, Profile selectedProfile) throws IOException {
+        JsonObject root = new JsonObject();
+        root.addProperty("accessToken", accessToken);
+        root.addProperty("clientToken", clientToken);
+        root.addProperty("requestUser", true);
+        JsonObject selected = new JsonObject();
+        selected.addProperty("id", selectedProfile.playerUUID);
+        selected.addProperty("name", selectedProfile.playerName);
+        root.add("selectedProfile", selected);
+        JsonObject json = NetworkUtils.postRequest(refreshUrl, root);
+        if (json.has("error")) {
+            throw new IOException("Cannot select this injector profile: " + json.get("errorMessage").getAsString());
+        }
+        return json;
+    }
+
+    private static String ensureTrailingSlash(String url) {
+        return url.endsWith("/") ? url : url + "/";
     }
 
     private String getAccountName(String baseUrl) {
@@ -232,29 +319,61 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         }
     }
 
-    private record Profile(String playerName, String playerUUID) {}
+    private static final class Profile {
+        private final String playerName;
+        private final String playerUUID;
+
+        private Profile(String playerName, String playerUUID) {
+            this.playerName = playerName;
+            this.playerUUID = playerUUID;
+        }
+    }
 
     private static List<Profile> readProfiles(JsonObject json) {
+        List<Profile> available = readAvailableProfiles(json);
         JsonElement selectedProfile = json.get("selectedProfile");
         if (selectedProfile != null) {
             JsonObject jo = selectedProfile.getAsJsonObject();
-            String playerName = jo.get("name").getAsString();
-            String playerUUID = jo.get("id").getAsString();
-
-            return List.of(new Profile(playerName, playerUUID));
-        } else {
-            JsonArray availableProfiles = json.get("availableProfiles").getAsJsonArray();
-            List<Profile> results = new ArrayList<>(availableProfiles.size());
-
-            for (JsonElement availableProfile : availableProfiles) {
-                JsonObject jo = availableProfile.getAsJsonObject();
-                String playerName = jo.get("name").getAsString();
-                String playerUUID = jo.get("id").getAsString();
-                results.add(new Profile(playerName, playerUUID));
+            String playerName = getString(jo, "name");
+            String playerUUID = getString(jo, "id");
+            if ((playerName == null || playerName.isEmpty()) && playerUUID != null) {
+                for (Profile profile : available) {
+                    if (playerUUID.equals(profile.playerUUID)) {
+                        playerName = profile.playerName;
+                        break;
+                    }
+                }
             }
 
-            return results;
+            return Collections.singletonList(new Profile(playerName, playerUUID));
         }
+        return available;
+    }
+
+    private static List<Profile> readAvailableProfiles(JsonObject json) {
+        JsonElement availableProfilesElement = json.get("availableProfiles");
+        if (!(availableProfilesElement instanceof JsonArray)) {
+            return Collections.emptyList();
+        }
+        JsonArray availableProfiles = availableProfilesElement.getAsJsonArray();
+        List<Profile> results = new ArrayList<>(availableProfiles.size());
+
+        for (JsonElement availableProfile : availableProfiles) {
+            JsonObject jo = availableProfile.getAsJsonObject();
+            String playerName = getString(jo, "name");
+            String playerUUID = getString(jo, "id");
+            results.add(new Profile(playerName, playerUUID));
+        }
+
+        return results;
+    }
+
+    private static String getString(JsonObject json, String key) {
+        JsonElement element = json.get(key);
+        if (element instanceof JsonPrimitive && ((JsonPrimitive) element).isString()) {
+            return element.getAsString();
+        }
+        return null;
     }
 
     private T loginOAuth(String server) throws IOException {
@@ -263,10 +382,17 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
         String openidConfigurationUrl;
         JsonObject ygg = NetworkUtils.postRequest(NetworkUtils.buildGet(yggUrl));
-        if (ygg.get("meta") instanceof JsonObject meta &&
-                meta.get("feature.openid_configuration_url") instanceof JsonPrimitive jp1 &&
-                jp1.isString()) openidConfigurationUrl = jp1.getAsString();
-        else throw new IOException("Invalid openid configuration url!");
+        if (ygg.get("meta") instanceof JsonObject) {
+            JsonObject meta = (JsonObject) ygg.get("meta");
+            if (meta.get("feature.openid_configuration_url") instanceof JsonPrimitive &&
+                    ((JsonPrimitive) meta.get("feature.openid_configuration_url")).isString()) {
+                openidConfigurationUrl = meta.get("feature.openid_configuration_url").getAsString();
+            } else {
+                throw new IOException("Invalid openid configuration url!");
+            }
+        } else {
+            throw new IOException("Invalid openid configuration url!");
+        }
 
         JsonObject config = NetworkUtils.postRequest(NetworkUtils.buildGet(openidConfigurationUrl));
         String deviceAuthorizationEndpoint = config.get("device_authorization_endpoint").getAsString();
@@ -275,13 +401,13 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
         String host = URI.create(yggUrl).getHost();
         if (OAuthConstants.list.containsKey(host)) clientId = OAuthConstants.list.get(host);
-        else if (config.get("shared_client_id") instanceof JsonPrimitive jp2 &&
-                jp2.isString()) clientId = jp2.getAsString();
+        else if (config.get("shared_client_id") instanceof JsonPrimitive &&
+                ((JsonPrimitive) config.get("shared_client_id")).isString()) clientId = config.get("shared_client_id").getAsString();
         else throw new IOException("Invalid client id!");
 
         Adapters.getMinecraftAdapter().showToast("accountsx.account.oauth2.code.generating", null);
 
-        Map<String, String> form1 = Map.of(
+        Map<String, String> form1 = form(
                 "client_id", clientId,
                 "scope", "openid offline_access Yggdrasil.PlayerProfiles.Select Yggdrasil.Server.Join"
         );
@@ -289,16 +415,21 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         String deviceCode = device.get("device_code").getAsString();
         String userCode = device.get("user_code").getAsString();
         int interval;
-        if (device.get("interval") instanceof JsonPrimitive jp &&
-                jp.isNumber()) interval = jp.getAsInt();
-        else interval = 5;
+        if (device.get("interval") instanceof JsonPrimitive && ((JsonPrimitive) device.get("interval")).isNumber()) {
+            interval = device.get("interval").getAsInt();
+        } else {
+            interval = 5;
+        }
         int expires;
-        if (device.get("expires_in") instanceof JsonPrimitive jp &&
-                jp.isNumber()) expires = jp.getAsInt();
-        else expires = 300;
-        if (device.get("verification_uri_complete") instanceof JsonPrimitive jp && jp.isString()) {
-            Adapters.getMinecraftAdapter().openBrowser(jp.getAsString());
-            Adapters.getMinecraftAdapter().copyText(jp.getAsString());
+        if (device.get("expires_in") instanceof JsonPrimitive && ((JsonPrimitive) device.get("expires_in")).isNumber()) {
+            expires = device.get("expires_in").getAsInt();
+        } else {
+            expires = 300;
+        }
+        if (device.get("verification_uri_complete") instanceof JsonPrimitive && ((JsonPrimitive) device.get("verification_uri_complete")).isString()) {
+            String verificationUriComplete = device.get("verification_uri_complete").getAsString();
+            Adapters.getMinecraftAdapter().openBrowser(verificationUriComplete);
+            Adapters.getMinecraftAdapter().copyText(verificationUriComplete);
         } else {
             Adapters.getMinecraftAdapter().copyText(userCode);
             device.get("verification_uri").getAsString();
@@ -313,7 +444,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                 throw new IOException("Interrupted.", e);
             }
 
-            Map<String, String> form2 = Map.of(
+            Map<String, String> form2 = form(
                     "client_id", clientId,
                     "grant_type", "urn:ietf:params:oauth:grant-type:device_code",
                     "device_code", deviceCode
@@ -354,6 +485,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                 AccountUUID.parse(profile.playerUUID),
                 yggUrl,
                 profile.playerUUID,
+                null,
                 getAccountName(yggUrl),
                 AvatarUtils.getAvatar(profileUrl, profile.playerUUID)
         );
@@ -369,7 +501,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         String refreshToken = OAuth.get("refresh_token").getAsString();
         String clientId = OAuth.get("client_id").getAsString();
 
-        Map<String, String> form = Map.of(
+        Map<String, String> form = form(
                 "client_id", clientId,
                 "grant_type", "refresh_token",
                 "refresh_token", refreshToken
@@ -394,5 +526,13 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         account.setProfile(accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID));
         account.setLoginProfile("OAuth " + OAuth, profile.playerUUID);
         account.setAvatar(AvatarUtils.getAvatar(profileUrl, profile.playerUUID));
+    }
+
+    private static Map<String, String> form(String... values) {
+        Map<String, String> result = new LinkedHashMap<String, String>();
+        for (int i = 0; i < values.length; i += 2) {
+            result.put(values[i], values[i + 1]);
+        }
+        return result;
     }
 }

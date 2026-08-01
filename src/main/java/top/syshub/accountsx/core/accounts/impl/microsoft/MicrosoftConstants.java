@@ -15,6 +15,7 @@ import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
 
 public final class MicrosoftConstants {
@@ -61,7 +62,7 @@ public final class MicrosoftConstants {
         }
 
         try {
-            return new AuthSecurityContext(parsePublicKeys(response.profilePropertyKeys), parsePublicKeys(response.profilePropertyKeys));
+            return new AuthSecurityContext(parsePublicKeys(response.profilePropertyKeys), parsePublicKeys(response.playerCertificateKeys));
         } catch (NoSuchAlgorithmException | InvalidKeySpecException e) {
             throw new IOException("Received malformed yggdrasil public key data.", e);
         }
@@ -69,7 +70,7 @@ public final class MicrosoftConstants {
 
     private static List<PublicKey> parsePublicKeys(List<KeyData> data) throws NoSuchAlgorithmException, InvalidKeySpecException {
         if (data == null || data.isEmpty()) {
-            return List.of();
+            return Collections.emptyList();
         }
 
         List<PublicKey> r = new ArrayList<>(data.size());
@@ -80,17 +81,16 @@ public final class MicrosoftConstants {
         return r;
     }
 
-    private record KeySetResponse(
-            @SerializedName("profilePropertyKeys")
-            List<KeyData> profilePropertyKeys,
-            @SerializedName("playerCertificateKeys")
-            List<KeyData> playerCertificateKeys
-    ) {
+    private static final class KeySetResponse {
+        @SerializedName("profilePropertyKeys")
+        private List<KeyData> profilePropertyKeys;
+
+        @SerializedName("playerCertificateKeys")
+        private List<KeyData> playerCertificateKeys;
     }
 
-    private record KeyData(
-            @SerializedName("publicKey")
-            String publicKey
-    ) {
+    private static final class KeyData {
+        @SerializedName("publicKey")
+        private String publicKey;
     }
 }

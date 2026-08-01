@@ -13,7 +13,6 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
-import java.util.Optional;
 
 import static top.syshub.accountsx.core.AccountsX.LOGGER;
 
@@ -72,12 +71,17 @@ public class AvatarUtils {
             JsonObject skinJson = NetworkUtils.postRequest(NetworkUtils.buildGet(profileUrl));
             JsonArray properties = skinJson.getAsJsonArray("properties");
 
-            Optional<JsonObject> textureProperty = properties.asList().stream()
-                    .map(JsonElement::getAsJsonObject)
-                    .filter(obj -> obj.get("name").getAsString().equals("textures"))
-                    .findFirst();
-
-            String valueBase64 = textureProperty.map(jsonObject -> jsonObject.get("value").getAsString()).orElse(null);
+            String valueBase64 = null;
+            for (JsonElement property : properties) {
+                JsonObject obj = property.getAsJsonObject();
+                if ("textures".equals(obj.get("name").getAsString())) {
+                    valueBase64 = obj.get("value").getAsString();
+                    break;
+                }
+            }
+            if (valueBase64 == null) {
+                return null;
+            }
             String valueJson = new String(Base64.getDecoder().decode(valueBase64), StandardCharsets.UTF_8);
             JsonObject valueObject = new Gson().fromJson(valueJson, JsonObject.class);
 

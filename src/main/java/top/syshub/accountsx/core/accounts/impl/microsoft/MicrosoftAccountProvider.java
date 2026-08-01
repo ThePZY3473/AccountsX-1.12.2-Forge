@@ -14,6 +14,7 @@ import top.syshub.accountsx.core.ui.UIScreen;
 import top.syshub.accountsx.core.utils.NetworkUtils;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
 
@@ -28,6 +29,14 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
     private static final String DEVICE_CODE_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode";
 
     private static final String TOKEN_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
+
+    private static Map<String, String> form(String... values) {
+        Map<String, String> result = new LinkedHashMap<String, String>();
+        for (int i = 0; i < values.length; i += 2) {
+            result.put(values[i], values[i + 1]);
+        }
+        return result;
+    }
 
     @Override
     public AccountContext createAccountContext(MicrosoftAccount account) throws IOException {
@@ -55,7 +64,7 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
 
         Adapters.getMinecraftAdapter().showToast("accountsx.account.oauth2.code.generating", null);
 
-        JsonObject device = NetworkUtils.postRequest(DEVICE_CODE_URL, Map.of(
+        JsonObject device = NetworkUtils.postRequest(DEVICE_CODE_URL, form(
                 "client_id", CLIENT_ID,
                 "scope", SCOPE
         ));
@@ -72,13 +81,17 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
         String microsoftAccessToken = null, microsoftRefreshToken = null;
 
         int interval;
-        if (device.get("interval") instanceof JsonPrimitive jp &&
-                jp.isNumber()) interval = jp.getAsInt();
-        else interval = 5;
+        if (device.get("interval") instanceof JsonPrimitive && ((JsonPrimitive) device.get("interval")).isNumber()) {
+            interval = device.get("interval").getAsInt();
+        } else {
+            interval = 5;
+        }
         int expires;
-        if (device.get("expires_in") instanceof JsonPrimitive jp &&
-                jp.isNumber()) expires = jp.getAsInt();
-        else expires = 300;
+        if (device.get("expires_in") instanceof JsonPrimitive && ((JsonPrimitive) device.get("expires_in")).isNumber()) {
+            expires = device.get("expires_in").getAsInt();
+        } else {
+            expires = 300;
+        }
 
         for (int i = 0; i < expires; i += interval) {
             try {
@@ -93,7 +106,7 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
             Adapters.getMinecraftAdapter().showToast("accountsx.account.oauth2.code.title", "accountsx.account.oauth2.code.desc", device.get("user_code").getAsString());
 
             JsonObject token;
-            token = NetworkUtils.postRequest(TOKEN_URL, Map.of(
+            token = NetworkUtils.postRequest(TOKEN_URL, form(
                     "grant_type", "urn:ietf:params:oauth:grant-type:device_code",
                     "code", device.get("device_code").getAsString(),
                     "client_id", CLIENT_ID
@@ -172,7 +185,7 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
 
         String playerName, playerUUID;
         {
-            JsonObject json = NetworkUtils.postRequest(NetworkUtils.buildGet(MicrosoftConstants.MS_GAME_PROFILE, Map.of(
+            JsonObject json = NetworkUtils.postRequest(NetworkUtils.buildGet(MicrosoftConstants.MS_GAME_PROFILE, form(
                     "Authorization", "Bearer " + accessToken
             )));
 
@@ -196,7 +209,7 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
     @Override
     public void refresh(MicrosoftAccount account) throws IOException {
         {
-            JsonObject token = NetworkUtils.postRequest(TOKEN_URL, Map.of(
+            JsonObject token = NetworkUtils.postRequest(TOKEN_URL, form(
                     "client_id", CLIENT_ID,
                     "refresh_token", account.getMicrosoftAccountRefreshToken(),
                     "grant_type", "refresh_token"
@@ -253,7 +266,7 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
 
         String playerName, playerUUID;
         {
-            JsonObject json = NetworkUtils.postRequest(NetworkUtils.buildGet(MicrosoftConstants.MS_GAME_PROFILE, Map.of(
+            JsonObject json = NetworkUtils.postRequest(NetworkUtils.buildGet(MicrosoftConstants.MS_GAME_PROFILE, form(
                     "Authorization", "Bearer " + accessToken
             )));
 

@@ -65,7 +65,7 @@ public final class AccountUUID {
 
     public static UUID parse(String value) throws IllegalArgumentException {
         switch (value.length()) {
-            case 36 -> {
+            case 36:
                 char ch1 = value.charAt(8);
                 char ch2 = value.charAt(13);
                 char ch3 = value.charAt(18);
@@ -85,8 +85,7 @@ public final class AccountUUID {
                 } else {
                     throw new IllegalArgumentException("Illegal UUID: " + value);
                 }
-            }
-            case 32 -> {
+            case 32:
                 return calculateUUID(
                         value,
                         parse4Nibbles(value, 0),
@@ -98,8 +97,8 @@ public final class AccountUUID {
                         parse4Nibbles(value, 24),
                         parse4Nibbles(value, 28)
                 );
-            }
-            default -> throw new IllegalArgumentException("Illegal UUID: " + value);
+            default:
+                throw new IllegalArgumentException("Illegal UUID: " + value);
         }
     }
 

@@ -15,6 +15,14 @@ public final class Translator<R> {
         this.handle = handle;
     }
 
+    public R translate(String key) {
+        return handle.translate(key);
+    }
+
+    public R translate(String key, String... args) {
+        return handle.translate(key, args);
+    }
+
     public R translate(AccountType type) {
         return handle.translate("accountsx.account.type." + type.name().toLowerCase(Locale.ROOT) + ".name");
     }
