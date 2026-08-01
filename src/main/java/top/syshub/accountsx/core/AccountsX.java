@@ -22,7 +22,7 @@ public class AccountsX {
     public static final String AUTHLIB_ADAPTER_ID = "accountsx-adapter-authlib";
     public static final String MOD_ID = "accountsx";
     public static final String MOD_NAME = "Accounts X";
-    public static final String VERSION = "2.0.0-alpha.0";
+    public static final String VERSION = "1.12.2-Forge";
     public static final Logger LOGGER = LogManager.getLogger(MOD_ID);
 
     @Mod.EventHandler

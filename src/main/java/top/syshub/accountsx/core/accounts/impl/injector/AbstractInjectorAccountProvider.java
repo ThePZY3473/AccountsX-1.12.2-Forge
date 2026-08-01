@@ -47,7 +47,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
     @Override
     public final AccountContext createAccountContext(T account) throws IOException {
-        String url = ensureTrailingSlash(account.getServer());
+        String url = stripTrailingSlash(account.getServer());
 
         List<PublicKey> publicKeys;
         List<String> skinDomains = new ArrayList<>();
@@ -308,6 +308,13 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
     private static String ensureTrailingSlash(String url) {
         return url.endsWith("/") ? url : url + "/";
+    }
+
+    private static String stripTrailingSlash(String url) {
+        while (url.endsWith("/") && url.length() > 1) {
+            url = url.substring(0, url.length() - 1);
+        }
+        return url;
     }
 
     private String getAccountName(String baseUrl) {

@@ -31,11 +31,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 设置 JDK 25
+      - name: 设置 JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "25"
+          java-version: "17"
 
       - name: 设置 Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -69,15 +69,14 @@ jobs:
             exit 1
           fi
 
-      - name: 构建所有适配器及通用包
+      - name: 构建 Forge 1.12.2 Mod
         shell: bash
         env:
-          # 多适配器 Loom 构建需要较大堆内存
-          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8"
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8"
         run: |
           set -euo pipefail
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace build
+          ./gradlew --no-daemon --stacktrace reobfJar
 
       - name: 查找构建产物
         id: artifacts
@@ -85,15 +84,15 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
-          UNIVERSAL="build/libs/AccountsX-${VERSION}-universal.jar"
-          if [[ ! -f "$UNIVERSAL" ]]; then
-            echo "::error::未找到期望的构建产物: $UNIVERSAL"
+          MOD_JAR="build/libs/AccountsX-${VERSION}.jar"
+          if [[ ! -f "$MOD_JAR" ]]; then
+            echo "::error::未找到期望的构建产物: $MOD_JAR"
             echo "可用的 jar 文件:"
             find build/libs -type f -name '*.jar' -print || true
             exit 1
           fi
-          echo "universal=$UNIVERSAL" >> "$GITHUB_OUTPUT"
-          ls -lh "$UNIVERSAL"
+          echo "mod_jar=$MOD_JAR" >> "$GITHUB_OUTPUT"
+          ls -lh "$MOD_JAR"
 
       - name: 生成更新日志
         id: changelog
@@ -187,7 +186,7 @@ jobs:
           draft: ${{ inputs.draft }}
           prerelease: ${{ inputs.prerelease }}
           files: |
-            ${{ steps.artifacts.outputs.universal }}
+            ${{ steps.artifacts.outputs.mod_jar }}
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -18,7 +18,7 @@ Build the reobfuscated Forge mod jar:
 The mod jar is generated at:
 
 ```text
-build/libs/AccountsX-2.0.0-alpha.0.jar
+build/libs/AccountsX-1.12.2-Forge.jar
 ```
 
 ## Notes

@@ -1,9 +1,25 @@
 # Gradle
 .gradle/
 build/
+buildSrc/build/
+buildSrc/.gradle/
 
 # IDE
 .idea/
+*.iml
+out/
+
+# Minecraft run data
+run/
+.minecraft/
+
+# Local account/debug files
+accounts.json
+account.json
+*.log
+*log*.txt
+111.txt
+222.txt
 
 # Agent
 CLAUDE.md
