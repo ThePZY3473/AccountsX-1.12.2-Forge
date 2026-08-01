@@ -1,26 +1,27 @@
 # AccountsX Forge 1.12.2
 
-AccountsX adapted for Minecraft Java 1.12.2 Forge.
+AccountsX 已适配于 Minecraft Java 1.12.2 Forge。
 
-## Build
+## 构建
 
-Requirements:
+你需要的:
 
 - JDK 17
-- Network access for Gradle dependency downloads
+- 一个好的网络，不然你怎么下Gradle
 
-Build the reobfuscated Forge mod jar:
+构建重新混淆后的Forge模组文件：
 
 ```sh
 ./gradlew reobfJar
 ```
 
-The mod jar is generated at:
+模组构建成果在这:
 
 ```text
 build/libs/AccountsX-1.12.2-Forge.jar
 ```
 
-## Notes
+## 备注
 
-This branch targets Forge 1.12.2 only. Old multi-version adapter sources and local test files were removed from the working tree and backed up outside the repository before publishing.
+这个分支是ai改的，代码可能会有点问题。
+反正能用就行。
