@@ -40,6 +40,19 @@ jobs:
       - name: 设置 Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: 准备 RFG JDK 17 兼容包装器
+        shell: bash
+        run: |
+          set -euo pipefail
+          CI_JDK="$RUNNER_TEMP/jdk17-ignore"
+          mkdir -p "$CI_JDK/bin"
+          cp "$JAVA_HOME/release" "$CI_JDK/release"
+          printf '#!/usr/bin/env sh\nexec "%s/bin/java" -XX:+IgnoreUnrecognizedVMOptions "$@"\n' "$JAVA_HOME" > "$CI_JDK/bin/java"
+          printf '#!/usr/bin/env sh\nexec "%s/bin/javac" "$@"\n' "$JAVA_HOME" > "$CI_JDK/bin/javac"
+          printf '#!/usr/bin/env sh\nexec "%s/bin/javadoc" "$@"\n' "$JAVA_HOME" > "$CI_JDK/bin/javadoc"
+          chmod +x "$CI_JDK/bin/java" "$CI_JDK/bin/javac" "$CI_JDK/bin/javadoc"
+          echo "CI_JDK=$CI_JDK" >> "$GITHUB_ENV"
+
       - name: 读取版本号
         id: version
         shell: bash
@@ -76,7 +89,10 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace reobfJar
+          echo "JAVA_HOME=$JAVA_HOME"
+          echo "CI_JDK=$CI_JDK"
+          java -version
+          ./gradlew --no-daemon --stacktrace -Dorg.gradle.java.installations.paths="$CI_JDK" reobfJar
 
       - name: 查找构建产物
         id: artifacts
