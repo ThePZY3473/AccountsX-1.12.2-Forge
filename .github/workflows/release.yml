@@ -75,6 +75,12 @@ jobs:
           node -e 'const fs = require("fs"); const path = "com/gtnewhorizons/retrofuturagradle/mcp/DecompileTask.class"; const oldValue = Buffer.from("-XX:+AggressiveOpts"); const newValue = Buffer.from("-XX:+AlwaysPreTouch"); let data = fs.readFileSync(path); const index = data.indexOf(oldValue); if (index < 0) throw new Error("RFG DecompileTask no longer contains -XX:+AggressiveOpts"); newValue.copy(data, index); fs.writeFileSync(path, data);'
           jar uf "$RFG_JAR" com/gtnewhorizons/retrofuturagradle/mcp/DecompileTask.class
 
+      - name: 清理 RFG 反编译缓存
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$GRADLE_USER_HOME/caches/retro_futura_gradle"
+
       - name: 读取版本号
         id: version
         shell: bash
