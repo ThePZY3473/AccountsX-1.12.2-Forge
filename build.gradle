@@ -322,8 +322,11 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 tasks.withType(com.gtnewhorizons.retrofuturagradle.mcp.DecompileTask).configureEach {
+    def fg23JavaVersion = providers.gradleProperty('accountsx.rfg.fg23JavaVersion')
+            .map { it.toInteger() }
+            .orElse(17)
     java8Launcher = javaToolchains.launcherFor {
-        languageVersion = JavaLanguageVersion.of(17)
+        languageVersion = JavaLanguageVersion.of(fg23JavaVersion.get())
     }
     java17Launcher = javaToolchains.launcherFor {
         languageVersion = JavaLanguageVersion.of(17)

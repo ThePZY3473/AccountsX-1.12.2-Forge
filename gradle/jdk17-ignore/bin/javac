@@ -1,2 +1,5 @@
 #!/bin/sh
+if [ -x /data/data/com.termux/files/usr/lib/jvm/java-17-openjdk/bin/javac ]; then
+  exec /data/data/com.termux/files/usr/lib/jvm/java-17-openjdk/bin/javac "$@"
+fi
 exec javac "$@"

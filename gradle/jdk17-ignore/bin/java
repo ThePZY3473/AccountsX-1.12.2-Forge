@@ -1,2 +1,5 @@
 #!/bin/sh
+if [ -x /data/data/com.termux/files/usr/lib/jvm/java-17-openjdk/bin/java ]; then
+  exec /data/data/com.termux/files/usr/lib/jvm/java-17-openjdk/bin/java -XX:+IgnoreUnrecognizedVMOptions "$@"
+fi
 exec java -XX:+IgnoreUnrecognizedVMOptions "$@"
