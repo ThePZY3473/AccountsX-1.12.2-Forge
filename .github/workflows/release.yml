@@ -31,12 +31,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 设置 JDK 8
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "8"
-
       - name: 设置 JDK 17
         uses: actions/setup-java@v4
         with:
@@ -62,6 +56,24 @@ jobs:
           echo "JAVA_HOME=$CI_JDK" >> "$GITHUB_ENV"
           echo "CI_JDK=$CI_JDK" >> "$GITHUB_ENV"
           echo "JAVA_TOOL_OPTIONS=-XX:+IgnoreUnrecognizedVMOptions" >> "$GITHUB_ENV"
+
+      - name: 修补 RFG 反编译 JVM 参数
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --stacktrace -Dorg.gradle.java.home="$CI_JDK" -Dorg.gradle.java.installations.paths="$CI_JDK" help
+          RFG_JAR="$(find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/com.gtnewhorizons/retrofuturagradle/1.4.9" -name 'retrofuturagradle-1.4.9.jar' -print -quit)"
+          if [[ -z "$RFG_JAR" ]]; then
+            echo "::error::未找到 RetroFuturaGradle 插件 jar"
+            exit 1
+          fi
+          PATCH_DIR="$RUNNER_TEMP/rfg-patch"
+          rm -rf "$PATCH_DIR"
+          mkdir -p "$PATCH_DIR"
+          cd "$PATCH_DIR"
+          jar xf "$RFG_JAR" com/gtnewhorizons/retrofuturagradle/mcp/DecompileTask.class
+          node -e 'const fs = require("fs"); const path = "com/gtnewhorizons/retrofuturagradle/mcp/DecompileTask.class"; const oldValue = Buffer.from("-XX:+AggressiveOpts"); const newValue = Buffer.from("-XX:+AlwaysPreTouch"); let data = fs.readFileSync(path); const index = data.indexOf(oldValue); if (index < 0) throw new Error("RFG DecompileTask no longer contains -XX:+AggressiveOpts"); newValue.copy(data, index); fs.writeFileSync(path, data);'
+          jar uf "$RFG_JAR" com/gtnewhorizons/retrofuturagradle/mcp/DecompileTask.class
 
       - name: 读取版本号
         id: version
@@ -99,10 +111,9 @@ jobs:
           chmod +x gradlew
           echo "JAVA_HOME=$JAVA_HOME"
           echo "CI_JDK=$CI_JDK"
-          echo "JAVA_HOME_8_X64=$JAVA_HOME_8_X64"
           echo "JAVA_TOOL_OPTIONS=${JAVA_TOOL_OPTIONS:-}"
           java -version
-          ./gradlew --no-daemon --stacktrace -Paccountsx.rfg.fg23JavaVersion=8 -Dorg.gradle.java.home="$CI_JDK" -Dorg.gradle.java.installations.paths="$JAVA_HOME_8_X64,$CI_JDK" reobfJar
+          ./gradlew --no-daemon --stacktrace -Dorg.gradle.java.home="$CI_JDK" -Dorg.gradle.java.installations.paths="$CI_JDK" reobfJar
 
       - name: 查找构建产物
         id: artifacts
