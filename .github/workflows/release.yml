@@ -44,13 +44,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          REAL_JAVA_HOME="$JAVA_HOME"
           CI_JDK="$RUNNER_TEMP/jdk17-ignore"
           mkdir -p "$CI_JDK/bin"
-          cp "$JAVA_HOME/release" "$CI_JDK/release"
-          printf '#!/usr/bin/env sh\nexec "%s/bin/java" -XX:+IgnoreUnrecognizedVMOptions "$@"\n' "$JAVA_HOME" > "$CI_JDK/bin/java"
-          printf '#!/usr/bin/env sh\nexec "%s/bin/javac" "$@"\n' "$JAVA_HOME" > "$CI_JDK/bin/javac"
-          printf '#!/usr/bin/env sh\nexec "%s/bin/javadoc" "$@"\n' "$JAVA_HOME" > "$CI_JDK/bin/javadoc"
+          cp "$REAL_JAVA_HOME/release" "$CI_JDK/release"
+          printf '#!/usr/bin/env sh\nexec "%s/bin/java" -XX:+IgnoreUnrecognizedVMOptions "$@"\n' "$REAL_JAVA_HOME" > "$CI_JDK/bin/java"
+          printf '#!/usr/bin/env sh\nexec "%s/bin/javac" "$@"\n' "$REAL_JAVA_HOME" > "$CI_JDK/bin/javac"
+          printf '#!/usr/bin/env sh\nexec "%s/bin/javadoc" "$@"\n' "$REAL_JAVA_HOME" > "$CI_JDK/bin/javadoc"
           chmod +x "$CI_JDK/bin/java" "$CI_JDK/bin/javac" "$CI_JDK/bin/javadoc"
+          echo "$CI_JDK/bin" >> "$GITHUB_PATH"
+          echo "JAVA_HOME=$CI_JDK" >> "$GITHUB_ENV"
           echo "CI_JDK=$CI_JDK" >> "$GITHUB_ENV"
 
       - name: 读取版本号
@@ -92,7 +95,7 @@ jobs:
           echo "JAVA_HOME=$JAVA_HOME"
           echo "CI_JDK=$CI_JDK"
           java -version
-          ./gradlew --no-daemon --stacktrace -Dorg.gradle.java.installations.paths="$CI_JDK" reobfJar
+          ./gradlew --no-daemon --stacktrace -Dorg.gradle.java.home="$CI_JDK" -Dorg.gradle.java.installations.paths="$CI_JDK" reobfJar
 
       - name: 查找构建产物
         id: artifacts
